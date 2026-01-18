@@ -12,8 +12,8 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(
   cors({
-    origin: "http://localhost:3000", // Apnar Next.js app er URL
-    credentials: true, // Eti must! Cookie transaction er jonno dorkar
+    origin: ["http://localhost:3000", "https://thread-client-three.vercel.app"],
+    credentials: true,
   }),
 );
 
@@ -31,25 +31,21 @@ const generateToken = (user) => {
     { expiresIn: "1d" },
   );
 };
-
+console.log(process.env.SITE_DOMAIN);
 const verifyToken = (req, res, next) => {
-  // ১. Cookie theke token-ti nite hobe
   const token = req.cookies?.token;
 
-  // ২. Token jodi na thake
   if (!token) {
     return res.status(401).send({ message: "Unauthorized access" });
   }
 
-  // ৩. Token verify kora
   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
     if (err) {
       return res.status(403).send({ message: "Invalid or expired token" });
     }
 
-    // ৪. Decoded data req object-e rakha jate porer step-e pawa jay
     req.user = decoded;
-    next(); // Sob thik thakle porer function-e jabe
+    next();
   });
 };
 app.get("/", (req, res) => {
@@ -106,7 +102,7 @@ async function run() {
         .cookie("token", token, {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
-          sameSite: "strict",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
           maxAge: 24 * 60 * 60 * 1000,
         })
         .send({
@@ -122,7 +118,7 @@ async function run() {
         return res.send("email & pass are required");
       }
       const user = await usersCollection.findOne({ email });
-      const isPasswordValid = bcrypt.compare(user.password, password);
+      const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
         return res.send("password is incorrect!");
       }
@@ -135,7 +131,7 @@ async function run() {
         .cookie("token", token, {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
-          sameSite: "strict",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
           maxAge: 24 * 60 * 60 * 1000,
         })
         .send({
@@ -168,18 +164,22 @@ async function run() {
         .clearCookie("token", {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
-          sameSite: "strict",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
         })
         .send({
           success: true,
           message: "Logout successful",
         });
     });
+    app.get("/users", async (req, res) => {
+      const result = await usersCollection.find().toArray();
+      res.send(result);
+    });
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!",
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!",
+    // );
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();

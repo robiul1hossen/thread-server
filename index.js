@@ -1,12 +1,14 @@
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcrypt");
-var jwt = require("jsonwebtoken");
+const jwt = require("jsonwebtoken");
 require("dotenv").config();
 const { MongoClient, ServerApiVersion } = require("mongodb");
+const cookieParser = require("cookie-parser");
 
 const app = express();
 const port = process.env.PORT || 3001;
+app.use(cookieParser());
 app.use(express.json());
 app.use(
   cors({
@@ -28,6 +30,27 @@ const generateToken = (user) => {
     process.env.JWT_SECRET,
     { expiresIn: "1d" },
   );
+};
+
+const verifyToken = (req, res, next) => {
+  // ১. Cookie theke token-ti nite hobe
+  const token = req.cookies?.token;
+
+  // ২. Token jodi na thake
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+
+  // ৩. Token verify kora
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(403).send({ message: "Invalid or expired token" });
+    }
+
+    // ৪. Decoded data req object-e rakha jate porer step-e pawa jay
+    req.user = decoded;
+    next(); // Sob thik thakle porer function-e jabe
+  });
 };
 app.get("/", (req, res) => {
   res.send("thread & co. is running...");
@@ -120,6 +143,24 @@ async function run() {
           message: "login successful",
           user,
         });
+    });
+    app.get("/me", verifyToken, async (req, res) => {
+      try {
+        const email = req.user.email;
+        const query = { email: email };
+
+        const user = await usersCollection.findOne(query, {
+          projection: { password: 0 },
+        });
+
+        if (!user) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        res.send(user);
+      } catch (error) {
+        res.status(500).send({ message: "Internal server error" });
+      }
     });
     // logout api
     app.post("/logout", async (req, res) => {

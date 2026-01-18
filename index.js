@@ -47,7 +47,7 @@ async function run() {
     const db = client.db("thread");
     const usersCollection = db.collection("users");
 
-    app.post("/user", async (req, res) => {
+    app.post("/register", async (req, res) => {
       const user = req.body;
       if (!user) {
         return res.status(400).send({ message: "User data is required" });
@@ -90,6 +90,48 @@ async function run() {
           success: true,
           message: "Signup successful",
           user: newUser,
+        });
+    });
+    // user login api
+    app.post("/login", async (req, res) => {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.send("email & pass are required");
+      }
+      const user = await usersCollection.findOne({ email });
+      const isPasswordValid = bcrypt.compare(user.password, password);
+      if (!isPasswordValid) {
+        return res.send("password is incorrect!");
+      }
+      const token = generateToken({
+        id: user._id,
+        email: user.email,
+        role: user.role,
+      });
+      res
+        .cookie("token", token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "strict",
+          maxAge: 24 * 60 * 60 * 1000,
+        })
+        .send({
+          success: true,
+          message: "login successful",
+          user,
+        });
+    });
+    // logout api
+    app.post("/logout", async (req, res) => {
+      res
+        .clearCookie("token", {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "strict",
+        })
+        .send({
+          success: true,
+          message: "Logout successful",
         });
     });
     // Send a ping to confirm a successful connection

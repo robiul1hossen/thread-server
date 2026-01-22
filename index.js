@@ -58,6 +58,7 @@ const client = new MongoClient(process.env.MONGODB_URI, {
 });
 const db = client.db("thread");
 const usersCollection = db.collection("users");
+const productsCollection = db.collection("products");
 
 app.post("/api/register", async (req, res) => {
   const user = req.body;
@@ -171,6 +172,33 @@ app.get("/api/users", async (req, res) => {
   res.send(result);
 });
 
+// products api
+app.get("/api/products", async (req, res) => {
+  const result = await productsCollection.find().toArray();
+  res.send(result);
+});
+app.get("/api/products/query", async (req, res) => {
+  const { search, sort } = req.query;
+  const cats = req.query["cats[]"];
+
+  const query = {};
+  if (cats) {
+    const catsArr = Array.isArray(cats) ? cats : [cats];
+    if (catsArr && catsArr.length > 0) {
+      query.category = { $in: catsArr };
+    }
+  }
+
+  const sortQuery = {
+    price: sort === "asc" ? 1 : -1,
+  };
+
+  if (search) {
+    query.$or = [{ name: { $regex: search, $options: "i" } }];
+  }
+  const result = await productsCollection.find(query).sort(sortQuery).toArray();
+  res.send(result);
+});
 async function connectDB() {
   try {
     await client.connect();
@@ -184,5 +212,5 @@ connectDB();
 module.exports = app;
 
 if (process.env.NODE_ENV !== "production") {
-  app.listen(3001, () => console.log("Server running on 3001"));
+  app.listen(port, () => console.log("Server running on 3001"));
 }

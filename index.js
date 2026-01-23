@@ -3,7 +3,7 @@ const cors = require("cors");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const cookieParser = require("cookie-parser");
 
 const app = express();
@@ -59,6 +59,7 @@ const client = new MongoClient(process.env.MONGODB_URI, {
 const db = client.db("thread");
 const usersCollection = db.collection("users");
 const productsCollection = db.collection("products");
+const cartCollection = db.collection("cart");
 
 app.post("/api/register", async (req, res) => {
   const user = req.body;
@@ -173,6 +174,14 @@ app.get("/api/users", async (req, res) => {
 });
 
 // products api
+app.post("/api/product", async (req, res) => {
+  const product = req.body;
+  if (!product) {
+    return res.send("Add a product");
+  }
+  const result = await productsCollection.insertOne(product);
+  res.send(result);
+});
 app.get("/api/products", async (req, res) => {
   const result = await productsCollection.find().toArray();
   res.send(result);
@@ -199,6 +208,22 @@ app.get("/api/products/query", async (req, res) => {
   const result = await productsCollection.find(query).sort(sortQuery).toArray();
   res.send(result);
 });
+app.get("/api/product/:id", async (req, res) => {
+  const { id } = req.params;
+  const query = { _id: new ObjectId(id) };
+  const result = await productsCollection.findOne(query);
+  res.send(result);
+});
+app.get("/api/product", async (req, res) => {
+  const cats = req.query.category;
+  const query = {};
+  if (cats) {
+    // query.$or = [{ category: { $regex: cats, $options: "i" } }];
+    query.category = cats;
+  }
+  const result = await productsCollection.find(query).toArray();
+  res.send(result);
+});
 async function connectDB() {
   try {
     await client.connect();
@@ -207,6 +232,34 @@ async function connectDB() {
     console.error(err);
   }
 }
+// Cart related api
+app.post("/api/product/cart", async (req, res) => {
+  const productData = req.body;
+  const { email, productId, size } = productData;
+  const query = { email, productId, size };
+  const isExist = await cartCollection.findOne(query);
+  if (isExist) {
+    const updatedDoc = {
+      $inc: {
+        quantity: 1,
+      },
+    };
+    const result = await cartCollection.updateOne(query, updatedDoc);
+    return res.send(result);
+  } else {
+    const result = await cartCollection.insertOne(productData);
+    res.send(result);
+  }
+});
+app.get("/api/cart/:email", async (req, res) => {
+  const { email } = req.params;
+  const query = {};
+  if (email) {
+    query.email = email;
+  }
+  const result = await cartCollection.find(query).toArray();
+  res.send(result);
+});
 connectDB();
 
 module.exports = app;

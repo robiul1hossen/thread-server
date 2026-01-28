@@ -247,6 +247,20 @@ app.delete("/api/product/:id", verifyToken, async (req, res) => {
   const result = await productsCollection.deleteOne(query);
   res.send(result);
 });
+// Edit/update product api
+app.patch("/api/products/:id", verifyToken, async (req, res) => {
+  const { id } = req.params;
+  const updateData = req.body;
+
+  const result = await productsCollection.updateOne(
+    { _id: new ObjectId(id) },
+    {
+      $set: updateData,
+    },
+  );
+
+  res.send(result);
+});
 
 // Cart related api
 app.post("/api/product/cart", async (req, res) => {

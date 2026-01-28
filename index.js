@@ -174,7 +174,7 @@ app.get("/api/users", async (req, res) => {
 });
 
 // products api
-app.post("/api/product", async (req, res) => {
+app.post("/api/product", verifyToken, async (req, res) => {
   const product = req.body;
   if (!product) {
     return res.send("Add a product");
@@ -183,11 +183,14 @@ app.post("/api/product", async (req, res) => {
   res.send(result);
 });
 app.get("/api/products", async (req, res) => {
-  const result = await productsCollection.find().toArray();
+  const result = await productsCollection.find().limit(8).toArray();
   res.send(result);
 });
 app.get("/api/products/query", async (req, res) => {
   const { search, sort } = req.query;
+  const page = Number(req.query.page) || 1;
+  const limit = Number(req.query.limit) || 10;
+  const skip = (page - 1) * 10;
   const cats = req.query["cats[]"];
 
   const query = {};
@@ -205,8 +208,22 @@ app.get("/api/products/query", async (req, res) => {
   if (search) {
     query.$or = [{ name: { $regex: search, $options: "i" } }];
   }
-  const result = await productsCollection.find(query).sort(sortQuery).toArray();
-  res.send(result);
+  const result = await productsCollection
+    .find(query)
+    .sort(sortQuery)
+    .skip(skip)
+    .limit(limit)
+    .toArray();
+  const totalProduct = await productsCollection.countDocuments();
+  const totalPage = Math.ceil(totalProduct / limit);
+  // res.send(result);
+  res.json({
+    success: true,
+    totalPage,
+    currentPage: page,
+    totalProduct,
+    result,
+  });
 });
 app.get("/api/product/:id", async (req, res) => {
   const { id } = req.params;
@@ -218,10 +235,16 @@ app.get("/api/product", async (req, res) => {
   const cats = req.query.category;
   const query = {};
   if (cats) {
-    // query.$or = [{ category: { $regex: cats, $options: "i" } }];
     query.category = cats;
   }
   const result = await productsCollection.find(query).toArray();
+  res.send(result);
+});
+// product delete api
+app.delete("/api/product/:id", verifyToken, async (req, res) => {
+  const { id } = req.params;
+  const query = { _id: new ObjectId(id) };
+  const result = await productsCollection.deleteOne(query);
   res.send(result);
 });
 
@@ -252,27 +275,6 @@ app.get("/api/cart/:email", async (req, res) => {
   }
   const result = await cartCollection.find(query).toArray();
   res.send(result);
-});
-app.get("/api/products/admin", async (req, res) => {
-  const page = Number(req.query.page) || 1;
-  const limit = Number(req.query.limit) || 10;
-  const skip = (page - 1) * 10;
-
-  const result = await productsCollection
-    .find()
-    .skip(skip)
-    .limit(limit)
-    .toArray();
-
-  const totalProduct = await productsCollection.countDocuments();
-  const totalPage = Math.ceil(totalProduct / limit);
-  res.json({
-    success: true,
-    totalPage,
-    currentPage: page,
-    totalProduct,
-    result,
-  });
 });
 
 async function connectDB() {

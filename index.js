@@ -12,7 +12,7 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(
   cors({
-    origin: ["http://localhost:3000", "https://thread-client-three.vercel.app"],
+    origin: true,
     credentials: true,
   }),
 );
@@ -40,15 +40,21 @@ const verifyToken = (req, res, next) => {
     if (err) {
       return res.status(403).send({ message: "Invalid or expired token" });
     }
-
     req.user = decoded;
     next();
   });
 };
+const verifyAdmin = (req, res, next) => {
+  if (req.user.role !== "admin") {
+    return res.status(403).send({ message: "Admin access only" });
+  }
+  next();
+};
+
 app.get("/", (req, res) => {
   res.send("thread & co. is running...");
 });
-
+const isProd = process.env.NODE_ENV === "production";
 const client = new MongoClient(process.env.MONGODB_URI, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -57,6 +63,16 @@ const client = new MongoClient(process.env.MONGODB_URI, {
   },
 });
 const db = client.db("thread");
+async function connectDB() {
+  try {
+    await client.connect();
+    console.log("Database connected!");
+  } catch (err) {
+    console.error(err);
+  }
+}
+connectDB();
+
 const usersCollection = db.collection("users");
 const productsCollection = db.collection("products");
 const cartCollection = db.collection("cart");
@@ -96,8 +112,8 @@ app.post("/api/register", async (req, res) => {
   res
     .cookie("token", token, {
       httpOnly: true,
-      secure: true,
-      sameSite: "none",
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
       maxAge: 24 * 60 * 60 * 1000,
     })
     .send({
@@ -112,7 +128,11 @@ app.post("/api/login", async (req, res) => {
   if (!email || !password) {
     return res.send("email & pass are required");
   }
+
   const user = await usersCollection.findOne({ email });
+  if (!user) {
+    return res.status(404).send({ message: "User not found" });
+  }
   const isPasswordValid = await bcrypt.compare(password, user.password);
   if (!isPasswordValid) {
     return res.send("password is incorrect!");
@@ -127,8 +147,8 @@ app.post("/api/login", async (req, res) => {
   res
     .cookie("token", token, {
       httpOnly: true,
-      secure: true,
-      sameSite: "none",
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
       maxAge: 24 * 60 * 60 * 1000,
     })
     .send({
@@ -160,17 +180,28 @@ app.post("/api/logout", async (req, res) => {
   res
     .clearCookie("token", {
       httpOnly: true,
-      secure: true,
-      sameSite: "none",
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
     })
     .send({
       success: true,
       message: "Logout successful",
     });
 });
-app.get("/api/users", async (req, res) => {
-  const result = await usersCollection.find().toArray();
-  res.send(result);
+app.get("/api/users", verifyToken, verifyAdmin, async (req, res) => {
+  const page = Number(req.query.page) || 1;
+  const limit = Number(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
+  const totalProduct = await productsCollection.countDocuments();
+  const totalPage = Math.ceil(totalProduct / limit);
+  const result = await usersCollection.find().skip(skip).limit(limit).toArray();
+  res.json({
+    success: true,
+    totalPage,
+    currentPage: page,
+    totalProduct,
+    result,
+  });
 });
 
 // products api
@@ -190,7 +221,7 @@ app.get("/api/products/query", async (req, res) => {
   const { search, sort } = req.query;
   const page = Number(req.query.page) || 1;
   const limit = Number(req.query.limit) || 10;
-  const skip = (page - 1) * 10;
+  const skip = (page - 1) * limit;
   const cats = req.query["cats[]"];
 
   const query = {};
@@ -290,17 +321,33 @@ app.get("/api/cart/:email", async (req, res) => {
   const result = await cartCollection.find(query).toArray();
   res.send(result);
 });
-
-async function connectDB() {
-  try {
-    await client.connect();
-    console.log("Database connected!");
-  } catch (err) {
-    console.error(err);
+app.get("/api/my-cart", async (req, res) => {
+  const email = req?.query?.email;
+  if (email) {
+    const result = await cartCollection
+      .aggregate([
+        { $match: { email: email } },
+        {
+          $addFields: {
+            productId: { $toObjectId: "$productId" },
+          },
+        },
+        {
+          $lookup: {
+            from: "products",
+            localField: "productId",
+            foreignField: "_id",
+            as: "productData",
+          },
+        },
+        { $unwind: "$productData" },
+      ])
+      .toArray();
+    return res.send(result);
   }
-}
-connectDB();
+});
 
+module.exports = verifyAdmin;
 module.exports = app;
 
 if (process.env.NODE_ENV !== "production") {

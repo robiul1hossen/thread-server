@@ -32,7 +32,6 @@ const generateToken = (user) => {
 };
 const verifyToken = (req, res, next) => {
   const token = req.cookies?.token;
-
   if (!token) {
     return res.status(401).send({ message: "Unauthorized access" });
   }
@@ -208,6 +207,10 @@ app.get("/api/users", verifyToken, verifyAdmin, async (req, res) => {
     result,
   });
 });
+app.get("/api/users/admin", verifyToken, verifyAdmin, async (req, res) => {
+  const result = await usersCollection.countDocuments();
+  res.send(result);
+});
 
 // products api
 app.post("/api/product", verifyToken, async (req, res) => {
@@ -217,6 +220,14 @@ app.post("/api/product", verifyToken, async (req, res) => {
   }
   const result = await productsCollection.insertOne(product);
   res.send(result);
+});
+app.get("/api/products/admin", verifyToken, verifyAdmin, async (req, res) => {
+  const data = await productsCollection.find().toArray();
+  const totalReviews = data.reduce((total, review) => {
+    return total + review.reviews.length;
+  }, 0);
+  // console.log(totalReviews);
+  res.send(totalReviews);
 });
 app.get("/api/products", async (req, res) => {
   const result = await productsCollection.find().limit(8).toArray();
@@ -317,6 +328,10 @@ app.post("/api/product/cart", async (req, res) => {
     res.send(result);
   }
 });
+app.get("/api/cart/admin", async (req, res) => {
+  const result = await cartCollection.countDocuments();
+  res.send(result);
+});
 app.get("/api/cart/:email", async (req, res) => {
   const { email } = req.params;
   const query = {};
@@ -357,6 +372,43 @@ app.delete("/api/cart/:id", verifyToken, async (req, res) => {
   const result = await cartCollection.deleteOne(query);
   res.send(result);
 });
+
+// admin dashboard chart related apis
+app.get(
+  "/api/users-stats/admin",
+  verifyToken,
+  verifyAdmin,
+  async (req, res) => {
+    const monthlyData = await usersCollection
+      .aggregate([
+        {
+          $group: {
+            _id: {
+              monthName: {
+                $dateToString: { format: "%b", date: "$createdAt" },
+              },
+              year: { $year: "$createdAt" },
+              monthNumber: { $month: "$createdAt" },
+            },
+            totalUsers: { $sum: 1 },
+          },
+        },
+        {
+          $sort: { "_id.year": 1, "_id.monthNumber": 1 },
+        },
+        {
+          $project: {
+            _id: 0,
+            month: "$_id.monthName",
+            year: "$_id.year",
+            totalUsers: 1,
+          },
+        },
+      ])
+      .toArray();
+    res.send(monthlyData);
+  },
+);
 
 module.exports = app;
 

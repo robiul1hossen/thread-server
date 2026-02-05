@@ -12,7 +12,8 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(
   cors({
-    origin: true,
+    // origin: true,
+    origin: ["http://localhost:3000", "https://thread-client-three.vercel.app"],
     credentials: true,
   }),
 );
@@ -112,14 +113,16 @@ app.post("/api/register", async (req, res) => {
   res
     .cookie("token", token, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
+      secure: true,
+      sameSite: "none",
+      path: "/",
       maxAge: 24 * 60 * 60 * 1000,
     })
     .send({
       success: true,
       message: "Signup successful",
       user: newUser,
+      token,
     });
 });
 // user login api
@@ -147,14 +150,16 @@ app.post("/api/login", async (req, res) => {
   res
     .cookie("token", token, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
+      secure: true,
+      sameSite: "none",
+      path: "/",
       maxAge: 24 * 60 * 60 * 1000,
     })
     .send({
       success: true,
       message: "login successful",
       user: userWithoutPassword,
+      token,
     });
 });
 app.get("/api/me", verifyToken, async (req, res) => {
@@ -180,8 +185,8 @@ app.post("/api/logout", async (req, res) => {
   res
     .clearCookie("token", {
       httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
+      secure: true,
+      sameSite: "none",
     })
     .send({
       success: true,
@@ -346,8 +351,13 @@ app.get("/api/my-cart", async (req, res) => {
     return res.send(result);
   }
 });
+app.delete("/api/cart/:id", verifyToken, async (req, res) => {
+  const { id } = req.params;
+  const query = { _id: new ObjectId(id) };
+  const result = await cartCollection.deleteOne(query);
+  res.send(result);
+});
 
-module.exports = verifyAdmin;
 module.exports = app;
 
 if (process.env.NODE_ENV !== "production") {

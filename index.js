@@ -341,12 +341,46 @@ app.get("/api/cart/admin", async (req, res) => {
 });
 app.get("/api/cart/:email", async (req, res) => {
   const { email } = req.params;
-  const query = {};
+  // const query = {};
+  // if (email) {
+  //   query.email = email;
+  // }
+  // const result = await cartCollection.find(query).toArray();
+  // res.send(result);
   if (email) {
-    query.email = email;
+    const result = await cartCollection
+      .aggregate([
+        { $match: { email: email } },
+        {
+          $addFields: {
+            productId: { $toObjectId: "$productId" },
+          },
+        },
+        {
+          $lookup: {
+            from: "products",
+            localField: "productId",
+            foreignField: "_id",
+            as: "productData",
+          },
+        },
+        { $unwind: "$productData" },
+        {
+          $project: {
+            _id: 0,
+            size: 1,
+            quantity: 1,
+            name: "$productData.name",
+            category: "$productData.category",
+            price: "$productData.price",
+            image: "$productData.image",
+            email: 1,
+          },
+        },
+      ])
+      .toArray();
+    return res.send(result);
   }
-  const result = await cartCollection.find(query).toArray();
-  res.send(result);
 });
 app.get("/api/my-cart", async (req, res) => {
   const email = req?.query?.email;
@@ -368,6 +402,18 @@ app.get("/api/my-cart", async (req, res) => {
           },
         },
         { $unwind: "$productData" },
+        {
+          $project: {
+            _id: 0,
+            size: 1,
+            quantity: 1,
+            name: "$productData.name",
+            category: "$productData.category",
+            price: "$productData.price",
+            image: "$productData.image",
+            email: 1,
+          },
+        },
       ])
       .toArray();
     return res.send(result);
@@ -418,8 +464,7 @@ app.get(
 );
 
 // payment gateway related api
-
-app.post("/api/order", async (req, res) => {
+app.post("/api/order", verifyToken, async (req, res) => {
   const order = req.body;
   const email = order?.email?.trim();
   const cartData = await cartCollection
@@ -453,7 +498,7 @@ app.post("/api/order", async (req, res) => {
     currency: order.currency,
     tran_id: tran_id, // use unique tran_id for each api call
     success_url: `http://localhost:3001/api/payment/success/${tran_id}`,
-    fail_url: "http://localhost:3000/fail",
+    fail_url: `http://localhost:3001/api/payment/fail/${tran_id}`,
     cancel_url: "http://localhost:3000/cancel",
     ipn_url: "http://localhost:3000/ipn",
     shipping_method: "Courier",
@@ -485,9 +530,10 @@ app.post("/api/order", async (req, res) => {
   });
 
   const finalOrder = {
-    ...cartOrderData,
+    cartOrderData,
     transactionId: tran_id,
     totalPrice,
+    email,
     paidStatus: false,
   };
   const result = await orderCollection.insertOne(finalOrder);
@@ -500,6 +546,7 @@ app.post("/api/order", async (req, res) => {
       {
         $set: {
           paidStatus: true,
+          paidAt: new Date(),
         },
       },
     );
@@ -507,6 +554,26 @@ app.post("/api/order", async (req, res) => {
       res.redirect(`http://localhost:3000/paymentSuccess/${tran_id}`);
     }
   });
+
+  app.post("/api/payment/fail/:tranId", async (req, res) => {
+    const result = await orderCollection.deleteOne({
+      transactionId: req.params.tranId,
+    });
+    if (result.deletedCount) {
+      res.redirect(`http://localhost:3000/paymentFail/${tran_id}`);
+    }
+  });
+});
+
+// order related apis
+app.get("/api/myOrders/:email", async (req, res) => {
+  const email = req.params.email;
+  const query = {};
+  if (email) {
+    query.email = email;
+  }
+  const result = await orderCollection.find(query).toArray();
+  res.send(result);
 });
 
 module.exports = app;
@@ -514,3 +581,13 @@ module.exports = app;
 if (process.env.NODE_ENV !== "production") {
   app.listen(port, () => console.log("Server running on 3001"));
 }
+
+// {
+//       projection: {
+//         transactionId: 0,
+//         totalPrice: 0,
+//         paidStatus: 0,
+//         email: 0,
+//         _id: 0,
+//       },
+//     }

@@ -1,4 +1,5 @@
 const express = require("express");
+const SSLCommerzPayment = require("sslcommerz-lts");
 const cors = require("cors");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
@@ -7,16 +8,21 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const cookieParser = require("cookie-parser");
 
 const app = express();
+app.set("trust proxy", 1);
 const port = process.env.PORT || 3001;
 app.use(cookieParser());
 app.use(express.json());
+
 app.use(
   cors({
-    // origin: true,
     origin: ["http://localhost:3000", "https://thread-client-three.vercel.app"],
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   }),
 );
+const store_id = process.env.PAYMENT_GATEWAY_STORE_ID;
+const store_passwd = process.env.PAYMENT_GATEWAY_SECRET;
+const is_live = false; //true for live, false for sandbox
 
 // jwt token generate
 const generateToken = (user) => {
@@ -76,6 +82,7 @@ connectDB();
 const usersCollection = db.collection("users");
 const productsCollection = db.collection("products");
 const cartCollection = db.collection("cart");
+const orderCollection = db.collection("orders");
 
 app.post("/api/register", async (req, res) => {
   const user = req.body;
@@ -150,6 +157,7 @@ app.post("/api/login", async (req, res) => {
     .cookie("token", token, {
       httpOnly: true,
       secure: true,
+      partitioned: true,
       sameSite: "none",
       path: "/",
       maxAge: 24 * 60 * 60 * 1000,
@@ -226,7 +234,6 @@ app.get("/api/products/admin", verifyToken, verifyAdmin, async (req, res) => {
   const totalReviews = data.reduce((total, review) => {
     return total + review.reviews.length;
   }, 0);
-  // console.log(totalReviews);
   res.send(totalReviews);
 });
 app.get("/api/products", async (req, res) => {
@@ -409,6 +416,98 @@ app.get(
     res.send(monthlyData);
   },
 );
+
+// payment gateway related api
+
+app.post("/api/order", async (req, res) => {
+  const order = req.body;
+  const email = order?.email?.trim();
+  const cartData = await cartCollection
+    .aggregate([
+      { $match: { email: email } },
+      {
+        $addFields: {
+          productId: { $toObjectId: "$productId" },
+        },
+      },
+      {
+        $lookup: {
+          from: "products",
+          localField: "productId",
+          foreignField: "_id",
+          as: "productData",
+        },
+      },
+      { $unwind: "$productData" },
+    ])
+    .toArray();
+  const cartOrderData = await cartCollection.find({ email: email }).toArray();
+  const totalPrice = cartData.reduce((total, item) => {
+    return total + item.productData.price * item.quantity;
+  }, 0);
+  const fullName = order.firstName + " " + order.lastName;
+
+  const tran_id = new ObjectId().toString();
+  const data = {
+    total_amount: totalPrice + order.shippingFee,
+    currency: order.currency,
+    tran_id: tran_id, // use unique tran_id for each api call
+    success_url: `http://localhost:3001/api/payment/success/${tran_id}`,
+    fail_url: "http://localhost:3000/fail",
+    cancel_url: "http://localhost:3000/cancel",
+    ipn_url: "http://localhost:3000/ipn",
+    shipping_method: "Courier",
+    product_name: "Computer.",
+    product_category: "Electronic",
+    product_profile: "general",
+    cus_name: fullName,
+    cus_email: email,
+    cus_add1: order?.city,
+    cus_add2: order?.city,
+    cus_city: order?.city,
+    cus_state: order?.state,
+    cus_postcode: order?.zip,
+    cus_country: order?.country,
+    cus_phone: order?.phone,
+    cus_fax: "01711111111",
+    ship_name: fullName,
+    ship_add1: "Dhaka",
+    ship_add2: "Dhaka",
+    ship_city: order?.city,
+    ship_state: order?.state,
+    ship_postcode: order?.zip,
+    ship_country: order?.country,
+  };
+  const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live);
+  sslcz.init(data).then((apiResponse) => {
+    let GatewayPageURL = apiResponse.GatewayPageURL;
+    res.send({ url: GatewayPageURL });
+  });
+
+  const finalOrder = {
+    ...cartOrderData,
+    transactionId: tran_id,
+    totalPrice,
+    paidStatus: false,
+  };
+  const result = await orderCollection.insertOne(finalOrder);
+
+  app.post("/api/payment/success/:tranId", async (req, res) => {
+    const result = await orderCollection.updateOne(
+      {
+        transactionId: req.params.tranId,
+      },
+      {
+        $set: {
+          paidStatus: true,
+        },
+      },
+    );
+    if (result.modifiedCount) {
+      res.redirect(`http://localhost:3000/paymentSuccess/${tran_id}`);
+    }
+  });
+});
 
 module.exports = app;
 

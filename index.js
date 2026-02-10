@@ -192,7 +192,7 @@ app.post("/api/logout", async (req, res) => {
   res
     .clearCookie("token", {
       httpOnly: true,
-      secure: true,
+      secure: false,
       sameSite: "none",
     })
     .send({
@@ -341,12 +341,6 @@ app.get("/api/cart/admin", async (req, res) => {
 });
 app.get("/api/cart/:email", async (req, res) => {
   const { email } = req.params;
-  // const query = {};
-  // if (email) {
-  //   query.email = email;
-  // }
-  // const result = await cartCollection.find(query).toArray();
-  // res.send(result);
   if (email) {
     const result = await cartCollection
       .aggregate([
@@ -404,7 +398,7 @@ app.get("/api/my-cart", async (req, res) => {
         { $unwind: "$productData" },
         {
           $project: {
-            _id: 0,
+            _id: 1,
             size: 1,
             quantity: 1,
             name: "$productData.name",
@@ -421,6 +415,7 @@ app.get("/api/my-cart", async (req, res) => {
 });
 app.delete("/api/cart/:id", verifyToken, async (req, res) => {
   const { id } = req.params;
+  console.log(id);
   const query = { _id: new ObjectId(id) };
   const result = await cartCollection.deleteOne(query);
   res.send(result);
@@ -466,7 +461,7 @@ app.get(
 // payment gateway related api
 app.post("/api/order", verifyToken, async (req, res) => {
   const order = req.body;
-  const email = order?.email?.trim();
+  const email = req?.user?.email?.trim();
   const cartData = await cartCollection
     .aggregate([
       { $match: { email: email } },
@@ -553,6 +548,8 @@ app.post("/api/order", verifyToken, async (req, res) => {
     if (result.modifiedCount) {
       res.redirect(`http://localhost:3000/paymentSuccess/${tran_id}`);
     }
+    const deleteCart = await cartCollection.deleteMany({ email: email });
+    res.send(deleteCart);
   });
 
   app.post("/api/payment/fail/:tranId", async (req, res) => {

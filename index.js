@@ -131,7 +131,7 @@ app.post("/api/register", async (req, res) => {
       token,
     });
 });
-// user login api
+
 app.post("/api/login", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
@@ -157,7 +157,6 @@ app.post("/api/login", async (req, res) => {
     .cookie("token", token, {
       httpOnly: true,
       secure: true,
-      partitioned: true,
       sameSite: "none",
       path: "/",
       maxAge: 24 * 60 * 60 * 1000,
@@ -192,8 +191,9 @@ app.post("/api/logout", async (req, res) => {
   res
     .clearCookie("token", {
       httpOnly: true,
-      secure: false,
+      secure: true,
       sameSite: "none",
+      path: "/",
     })
     .send({
       success: true,
@@ -202,16 +202,18 @@ app.post("/api/logout", async (req, res) => {
 });
 app.get("/api/users", verifyToken, verifyAdmin, async (req, res) => {
   const page = Number(req.query.page) || 1;
-  const limit = Number(req.query.limit) || 10;
+  const limit = Number(req.query.limit) || 17;
+  console.log(limit);
   const skip = (page - 1) * limit;
-  const totalProduct = await productsCollection.countDocuments();
-  const totalPage = Math.ceil(totalProduct / limit);
+  const totalUsers = await usersCollection.countDocuments();
+  console.log(totalUsers);
+  const totalPage = Math.ceil(totalUsers / limit);
   const result = await usersCollection.find().skip(skip).limit(limit).toArray();
   res.json({
     success: true,
     totalPage,
     currentPage: page,
-    totalProduct,
+    totalProduct: totalUsers,
     result,
   });
 });
@@ -219,6 +221,17 @@ app.get("/api/users/admin", verifyToken, verifyAdmin, async (req, res) => {
   const result = await usersCollection.countDocuments();
   res.send(result);
 });
+app.delete(
+  "/api/user/admin/:id",
+  verifyToken,
+  verifyAdmin,
+  async (req, res) => {
+    const { id } = req.params;
+    const query = { _id: new ObjectId(id) };
+    const result = await usersCollection.deleteOne(query);
+    res.send(result);
+  },
+);
 
 // products api
 app.post("/api/product", verifyToken, async (req, res) => {
@@ -335,7 +348,7 @@ app.post("/api/product/cart", async (req, res) => {
     res.send(result);
   }
 });
-app.get("/api/cart/admin", async (req, res) => {
+app.get("/api/cart/admin", verifyToken, verifyAdmin, async (req, res) => {
   const result = await cartCollection.countDocuments();
   res.send(result);
 });
@@ -420,7 +433,6 @@ app.delete("/api/cart/:id", verifyToken, async (req, res) => {
   const result = await cartCollection.deleteOne(query);
   res.send(result);
 });
-
 // admin dashboard chart related apis
 app.get(
   "/api/users-stats/admin",
@@ -457,7 +469,6 @@ app.get(
     res.send(monthlyData);
   },
 );
-
 // payment gateway related api
 app.post("/api/order", verifyToken, async (req, res) => {
   const order = req.body;
@@ -492,10 +503,10 @@ app.post("/api/order", verifyToken, async (req, res) => {
     total_amount: totalPrice + order.shippingFee,
     currency: order.currency,
     tran_id: tran_id, // use unique tran_id for each api call
-    success_url: `http://localhost:3001/api/payment/success/${tran_id}`,
-    fail_url: `http://localhost:3001/api/payment/fail/${tran_id}`,
-    cancel_url: "http://localhost:3000/cancel",
-    ipn_url: "http://localhost:3000/ipn",
+    success_url: `https://thread-tan-pi.vercel.app/api/payment/success/${tran_id}`,
+    fail_url: `https://thread-tan-pi.vercel.app/api/payment/fail/${tran_id}`,
+    cancel_url: "https://thread-tan-pi.vercel.app/cancel",
+    ipn_url: "https://thread-tan-pi.vercel.app/ipn",
     shipping_method: "Courier",
     product_name: "Computer.",
     product_category: "Electronic",
@@ -546,7 +557,9 @@ app.post("/api/order", verifyToken, async (req, res) => {
       },
     );
     if (result.modifiedCount) {
-      res.redirect(`http://localhost:3000/paymentSuccess/${tran_id}`);
+      res.redirect(
+        `https://thread-client-three.vercel.app/paymentSuccess/${tran_id}`,
+      );
     }
     const deleteCart = await cartCollection.deleteMany({ email: email });
     res.send(deleteCart);
@@ -557,13 +570,15 @@ app.post("/api/order", verifyToken, async (req, res) => {
       transactionId: req.params.tranId,
     });
     if (result.deletedCount) {
-      res.redirect(`http://localhost:3000/paymentFail/${tran_id}`);
+      res.redirect(
+        `https://thread-client-three.vercel.app/paymentFail/${tran_id}`,
+      );
     }
   });
 });
 
 // order related apis
-app.get("/api/myOrders/:email", async (req, res) => {
+app.get("/api/myOrders/:email", verifyToken, async (req, res) => {
   const email = req.params.email;
   const query = {};
   if (email) {
@@ -578,13 +593,3 @@ module.exports = app;
 if (process.env.NODE_ENV !== "production") {
   app.listen(port, () => console.log("Server running on 3001"));
 }
-
-// {
-//       projection: {
-//         transactionId: 0,
-//         totalPrice: 0,
-//         paidStatus: 0,
-//         email: 0,
-//         _id: 0,
-//       },
-//     }

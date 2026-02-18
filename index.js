@@ -116,14 +116,17 @@ app.post("/api/register", async (req, res) => {
   };
 
   const token = generateToken(newUser);
+  
+  const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    path: "/",
+    maxAge: 24 * 60 * 60 * 1000,
+  };
+
   res
-    .cookie("token", token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-      path: "/",
-      maxAge: 24 * 60 * 60 * 1000,
-    })
+    .cookie("token", token, cookieOptions)
     .send({
       success: true,
       message: "Signup successful",
@@ -153,14 +156,17 @@ app.post("/api/login", async (req, res) => {
   });
   const userWithoutPassword = { ...user };
   delete userWithoutPassword.password;
+  
+  const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    path: "/",
+    maxAge: 24 * 60 * 60 * 1000,
+  };
+
   res
-    .cookie("token", token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-      path: "/",
-      maxAge: 24 * 60 * 60 * 1000,
-    })
+    .cookie("token", token, cookieOptions)
     .send({
       success: true,
       message: "login successful",
@@ -188,13 +194,15 @@ app.get("/api/me", verifyToken, async (req, res) => {
 });
 // logout api
 app.post("/api/logout", async (req, res) => {
+  const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    path: "/",
+  };
+
   res
-    .clearCookie("token", {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-      path: "/",
-    })
+    .clearCookie("token", cookieOptions)
     .send({
       success: true,
       message: "Logout successful",
